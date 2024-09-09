@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/olekukonko/tablewriter"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -52,17 +53,19 @@ func (s *Statistics) GetConnectionData() map[string]time.Time {
 func (s *Statistics) DisplayStatsInTerminal() {
 	// Create a new table
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"Client Address", "Connection Time", "Uptime (s)"})
+	table.SetHeader([]string{"Serial No", "Client Address", "Connection Time", "Uptime (s)"})
 
 	// Retrieve data and populate the table
-
+	var serialNo int = 0
 	for address, startTime := range s.GetConnectionData() {
 		uptime := time.Since(startTime).Seconds()
 		table.Append([]string{
+			strconv.Itoa(serialNo),
 			address,
 			startTime.Format(time.RFC3339),
 			fmt.Sprintf("%.2f", uptime),
 		})
+		serialNo++
 	}
 
 	table.Render()

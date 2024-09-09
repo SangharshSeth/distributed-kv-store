@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"distributed-store/internal/statistics"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"net"
 	"os"
@@ -11,24 +12,33 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 )
 
 type DistributedKVStore struct {
-	dataStore        map[string]string
-	mutexLock        *sync.RWMutex
+	dataStore        []map[string]string
+	mutexLock        []*sync.RWMutex
 	tcpServerAddress string
 	waitGroup        *sync.WaitGroup
 	analyticsStorage *statistics.Statistics
+	partitionSize    int
 }
 
-func NewDistributedKVStore(dataStore map[string]string, tcpServerAddress string, statisticsStore *statistics.Statistics) *DistributedKVStore {
+func NewDistributedKVStore(tcpServerAddress string, statisticsStore *statistics.Statistics, partitionSize int) *DistributedKVStore {
+	var dataPartitions = make([]map[string]string, partitionSize)
+	var mutexLocks = make([]*sync.RWMutex, partitionSize)
+
+	for i := 0; i < partitionSize; i++ {
+		dataPartitions[i] = make(map[string]string)
+		mutexLocks[i] = &sync.RWMutex{}
+	}
+
 	return &DistributedKVStore{
-		dataStore:        dataStore,
-		mutexLock:        &sync.RWMutex{},
+		dataStore:        dataPartitions,
+		mutexLock:        mutexLocks,
 		tcpServerAddress: tcpServerAddress,
 		waitGroup:        &sync.WaitGroup{},
 		analyticsStorage: statisticsStore,
+		partitionSize:    partitionSize,
 	}
 }
 
@@ -60,27 +70,32 @@ func (d *DistributedKVStore) StartSystem() {
 		fmt.Println("Accepted connection from", connection.RemoteAddr())
 		d.waitGroup.Add(1)
 		d.analyticsStorage.AddConnection(connection.RemoteAddr().String())
-		d.analyticsStorage.DisplayStatsInTerminal()
 		go d.HandleConnection(connection)
 	}
 }
 
 func (d *DistributedKVStore) Set(key string, value string) string {
-	fmt.Printf("Trying to write key: %s, waiting for any ongoing reads to finish...\n", key)
 
-	d.mutexLock.Lock() // Acquire write lock
-	defer d.mutexLock.Unlock()
+	partitionIndex := d.HashKeyIntoPartitions(key)
 
-	fmt.Printf("Writing key: %s\n", key)
-	d.dataStore[key] = value
+	log.Printf("Setting the key in partition %d", partitionIndex)
+
+	d.mutexLock[partitionIndex].Lock()
+	d.mutexLock[partitionIndex].Unlock()
+
+	d.dataStore[partitionIndex][key] = value
 	return key
 }
 
 func (d *DistributedKVStore) Get(key string) (string, bool) {
-	d.mutexLock.RLock()
-	defer d.mutexLock.RUnlock()
-	time.Sleep(5 * time.Second)
-	value, exists := d.dataStore[key]
+	dataInThisPartitionIndex := d.HashKeyIntoPartitions(key)
+
+	log.Printf("Getting the key from partiton %d", dataInThisPartitionIndex)
+
+	d.mutexLock[dataInThisPartitionIndex].RLock()
+	d.mutexLock[dataInThisPartitionIndex].RUnlock()
+
+	value, exists := d.dataStore[dataInThisPartitionIndex][key]
 	return value, exists
 
 }
@@ -125,9 +140,31 @@ func (d *DistributedKVStore) ProcessCommand(inputLine string) string {
 	}
 
 }
+func (d *DistributedKVStore) GetAll() {
+	for key, value := range d.dataStore {
+		fmt.Println(key, " ", value)
+	}
+	fmt.Println(len(d.dataStore))
+}
 
 func (d *DistributedKVStore) ShutDown() {
 	d.waitGroup.Wait()
+	d.analyticsStorage.DisplayStatsInTerminal()
+	d.ViewPartitionWiseData()
 	fmt.Println("Shutting Down")
 	os.Exit(0)
+}
+
+func (d *DistributedKVStore) HashKeyIntoPartitions(key string) int {
+	hasher := fnv.New32()
+	hasher.Write([]byte(key))
+	hash := hasher.Sum32()
+	log.Printf("hash is %d, partitionSize is %d", int(hash), d.partitionSize)
+	return int(hash) % d.partitionSize
+}
+
+func (d *DistributedKVStore) ViewPartitionWiseData() {
+	for index, value := range d.dataStore {
+		log.Printf("Current partition %d has %d elements\n", index, len(value))
+	}
 }

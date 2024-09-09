@@ -8,16 +8,16 @@ import (
 
 func main() {
 
-	storageEngine := make(map[string]string)
+	partitionSize := 3
 	var connectionsWithUptime = make(map[string]time.Time)
 
 	newStatisticsStore := statistics.NewStatisticsStore(
 		connectionsWithUptime,
 	)
 	newStore := store.NewDistributedKVStore(
-		storageEngine,
 		"localhost:9090",
 		newStatisticsStore,
+		partitionSize,
 	)
 
 	newStore.StartSystem()

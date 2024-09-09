@@ -1,58 +1,71 @@
 package main
 
 import (
-	"bufio"
+	"crypto/rand"
 	"fmt"
 	"log"
 	"net"
-	"runtime"
-	"sync"
 	"time"
 )
 
 func main() {
 	address := "localhost:9090"
-	numConnections := 100 // Number of concurrent connections
-	var wg sync.WaitGroup
+	numConnections := 150 // Number of sequential connections
+
+	startTime := time.Now()
 
 	for i := 0; i < numConnections; i++ {
-		wg.Add(1)
-		go func(index int) {
-			defer wg.Done()
-			conn, err := net.DialTimeout("tcp", address, 5*time.Second)
-			if err != nil {
-				log.Printf("Failed to connect: %v", err)
-				return
-			}
-			defer conn.Close()
+		// Measure the time per connection
+		connStart := time.Now()
 
-			// Set a deadline for the entire connection
-			conn.SetDeadline(time.Now().Add(10 * time.Second))
+		conn, err := net.DialTimeout("tcp", address, 2*time.Second) // Reduced timeout
+		if err != nil {
+			log.Printf("Failed to connect: %v", err)
+			return
+		}
 
-			// Example command
-			fmt.Fprintf(conn, "SET key%d value%d\n", index, index)
+		key := randomString(8)
+		value := randomString(12)
 
-			// Read response
-			scanner := bufio.NewScanner(conn)
-			for scanner.Scan() {
-				fmt.Printf("Connection %d received: %s\n", index, scanner.Text())
-				// Reset the deadline for each successful read
-				conn.SetDeadline(time.Now().Add(10 * time.Second))
-			}
+		// Send SET command using conn.Write directly for better performance
+		_, err = conn.Write([]byte(fmt.Sprintf("SET %s %s\n", key, value)))
+		if err != nil {
+			log.Printf("Failed to send data: %v", err)
+			conn.Close()
+			continue
+		}
 
-			if err := scanner.Err(); err != nil {
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					fmt.Printf("Connection %d timed out\n", index)
-				} else {
-					fmt.Printf("Connection %d error: %v\n", index, err)
-				}
-			}
-		}(i)
+		// Read the response, reducing buffer size for speed improvement
+		response := make([]byte, 512) // Small buffer for simple commands
+		_, err = conn.Read(response)
+		if err != nil {
+			log.Printf("Failed to read response: %v", err)
+		} else {
+			fmt.Printf("Connection %d received: %s\n", i, string(response))
+		}
+
+		conn.Close()
+
+		// Print time taken for the current connection
+		fmt.Printf("Connection %d took %s\n", i, time.Since(connStart))
 	}
 
-	// Wait for all connections to finish
-	wg.Wait()
+	// Print total time taken for the load test
+	duration := time.Since(startTime)
+	fmt.Printf("Load test completed in %s\n", duration)
+}
 
-	// Print the number of goroutines
-	fmt.Printf("Number of goroutines: %d\n", runtime.NumGoroutine())
+// Generate a random string of the given length
+func randomString(n int) string {
+	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	bytes := make([]byte, n)
+	_, err := rand.Read(bytes)
+	if err != nil {
+		log.Fatalf("Failed to generate random string: %v", err)
+	}
+
+	for i, b := range bytes {
+		bytes[i] = letters[b%byte(len(letters))]
+	}
+	return string(bytes)
 }
