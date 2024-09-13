@@ -9,7 +9,7 @@ HOST = 'localhost'
 PORT = 9090
 
 # Number of concurrent connections
-NUM_CONNECTIONS = 100
+NUM_CONNECTIONS = 500
 
 # Function to generate a random key and value
 def generate_random_key_value():
