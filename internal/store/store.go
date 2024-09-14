@@ -2,8 +2,8 @@ package store
 
 import (
 	"bufio"
-	"distributed-store/internal/statistics"
 	"fmt"
+	"github.com/SangharshSeth/distributed-kv-store/internal/statistics"
 	"hash/fnv"
 	"log"
 	"log/slog"

@@ -1,9 +1,9 @@
 package main
 
 import (
-	"distributed-store/internal/statistics"
-	"distributed-store/internal/store"
 	"fmt"
+	"github.com/SangharshSeth/distributed-kv-store/internal/statistics"
+	"github.com/SangharshSeth/distributed-kv-store/internal/store"
 	"log"
 	"os"
 	"time"
