@@ -30,7 +30,10 @@ type DistributedKVStore struct {
 func NewDistributedKVStore(tcpServerAddress string, statisticsStore *statistics.Statistics, partitionSize int) *DistributedKVStore {
 	var dataPartitions = make([]map[string]string, partitionSize)
 	var mutexLocks = make([]*sync.RWMutex, partitionSize)
-	AOFLogFileName, err := os.Open("AOF.txt")
+	//Opening the file in Append/Write Mode makes the cursor go to end of the file
+	//So to read a file you have to create a new pointer in read mode or seek to the beginning of file
+
+	AOFLogFileName, err := os.OpenFile("AOF.txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		slog.Error("Failed to Create or Open AOF File", slog.String("error", err.Error()))
 	}
@@ -52,28 +55,26 @@ func NewDistributedKVStore(tcpServerAddress string, statisticsStore *statistics.
 
 func (d *DistributedKVStore) LoadDataFromAOFFile() {
 	//Read from d.AOFLogFileName
-	slog.Info("Loading data from AOF File")
+	_, err := d.AOFLogFileName.Seek(0, 0)
+	if err != nil {
+		slog.Error("Failed to seek to the beginning of file")
+	}
 	scanner := bufio.NewScanner(d.AOFLogFileName)
+
 	for scanner.Scan() {
 		command := scanner.Text()
-		slog.Info("Command is ", slog.String("command", command))
 		d.ProcessCommand(command, true)
 	}
-	d.AOFLogFileName.Close()
-	slog.Info("Length of map is ", slog.Int("length", len(d.dataStore)))
 }
 
 func (d *DistributedKVStore) StartSystem() {
 	tcpListener, err := net.Listen("tcp", d.tcpServerAddress)
 	defer tcpListener.Close()
 
-	slog.Info("AOF File Changes are applied to the system")
-	slog.Info("Storage service elements count is", slog.Int("count", len(d.dataStore)))
-
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
-	log.Printf("TCP Server listening on %s", d.tcpServerAddress)
+	slog.Info("TCP Server listening on ", slog.String("address", d.tcpServerAddress))
 
 	//Handling Shutdown
 	stopChannel := make(chan os.Signal, 1)
@@ -105,12 +106,11 @@ func (d *DistributedKVStore) Set(key string, value string) string {
 	d.mutexLock[partitionIndex].Lock()
 	defer d.mutexLock[partitionIndex].Unlock()
 	d.dataStore[partitionIndex][key] = value
+
 	return key
 }
 func (d *DistributedKVStore) Get(key string) (string, bool) {
 	dataInThisPartitionIndex := d.HashKeyIntoPartitions(key)
-
-	log.Printf("Getting the key from partiton %d", dataInThisPartitionIndex)
 
 	d.mutexLock[dataInThisPartitionIndex].RLock()
 	defer d.mutexLock[dataInThisPartitionIndex].RUnlock()
@@ -171,19 +171,12 @@ func (d *DistributedKVStore) ProcessCommand(inputLine string, isLoadingFromAOF b
 		d.Set(inputSlice[1], inputSlice[2])
 		return "OK\n"
 	case "GET":
-		for key, value := range d.dataStore {
-			d.mutexLock[key].RLock()
-			fmt.Println(key, " ", value)
-		}
 		value, exists := d.Get(inputSlice[1])
 		if exists {
 			return fmt.Sprintf("%s\n", value)
 		}
 		return "NOT FOUND\n"
 	case "DEL":
-		if !isLoadingFromAOF {
-			d.AOFLogFileName.WriteString(inputLine + "\n")
-		}
 		deleted := d.Delete(inputSlice[1])
 		if deleted {
 			return "KEY DELETED\n"
@@ -208,18 +201,32 @@ func (d *DistributedKVStore) HashKeyIntoPartitions(key string) int {
 		return 0
 	}
 	hash := hashEngine.Sum32()
-	log.Printf("hash is %d, partitionSize is %d", int(hash), d.PartitionSize)
 	return int(hash) % d.PartitionSize
 }
 func (d *DistributedKVStore) ViewPartitionWiseData() {
-	for index, value := range d.dataStore {
-		log.Printf("Current partition %d has %d elements\n", index, len(value))
+	var totalElements int
+	partitionSizes := make(map[int]int, len(d.dataStore))
+
+	for index, partition := range d.dataStore {
+		d.mutexLock[index].RLock()
+		size := len(partition)
+		partitionSizes[index] = size
+		totalElements += size
+		d.mutexLock[index].RUnlock()
 	}
+
+	slog.Info("Partition-wise data summary",
+		slog.Int("total_partitions", len(d.dataStore)),
+		slog.Int("total_elements", totalElements),
+		slog.Any("partition_sizes", partitionSizes))
 }
+
 func (d *DistributedKVStore) ShutDown() {
+	fmt.Println("Entered Shutting Down the Server")
+
 	d.waitGroup.Wait()
 	d.analyticsStorage.DisplayStatsInTerminal()
-	d.ViewPartitionWiseData()
+	//d.ViewPartitionWiseData()
 	fmt.Println("Shutting Down....")
 	os.Exit(0)
 }
