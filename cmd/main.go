@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/SangharshSeth/distributed-kv-store/internal/statistics"
-	"github.com/SangharshSeth/distributed-kv-store/internal/store"
+	"github.com/SangharshSeth/distributed-kv-store"
+	"github.com/SangharshSeth/distributed-kv-store/pkg/stastistics"
 	"log"
 	"os"
 	"time"
@@ -32,13 +32,13 @@ func main() {
 	partitionSize := 3
 	var connectionsWithUptime = make(map[string]time.Time)
 
-	newStatisticsStore := statistics.NewStatisticsStore(
+	newStatisticsStore := stastistics.NewStatisticsStore(
 		connectionsWithUptime,
 	)
 
 	fmt.Println(Green + "Welcome to Distributed Key-Value Store!" + Reset)
 
-	newStore := store.NewDistributedKVStore(
+	newStore := distributed_store.NewDistributedKVStore(
 		"0.0.0.0:9090",
 		newStatisticsStore,
 		partitionSize,

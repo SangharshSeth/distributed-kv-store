@@ -1,9 +1,9 @@
-package store
+package distributed_store
 
 import (
 	"bufio"
 	"fmt"
-	"github.com/SangharshSeth/distributed-kv-store/internal/statistics"
+	"github.com/SangharshSeth/distributed-kv-store/pkg/stastistics"
 	"hash/fnv"
 	"log"
 	"log/slog"
@@ -16,18 +16,20 @@ import (
 )
 
 // DistributedKVStore is a struct representing a distributed key-value store. It allows for concurrent read and write operations.
-// Maximum KEY size supported is 128 Bytes
+// Maximum key size supported is 128 bytes
 type DistributedKVStore struct {
 	dataStore        []map[string]string
 	mutexLock        []*sync.RWMutex
 	tcpServerAddress string
 	waitGroup        *sync.WaitGroup
-	analyticsStorage *statistics.Statistics
+	analyticsStorage *stastistics.Statistics
 	PartitionSize    int
 	AOFLogFileName   *os.File
 }
 
-func NewDistributedKVStore(tcpServerAddress string, statisticsStore *statistics.Statistics, partitionSize int) *DistributedKVStore {
+// NewDistributedKVStore creates and initializes a new DistributedKVStore instance.
+// It sets up the data partitions, mutex locks, and opens the AOF log file.
+func NewDistributedKVStore(tcpServerAddress string, statisticsStore *stastistics.Statistics, partitionSize int) *DistributedKVStore {
 	var dataPartitions = make([]map[string]string, partitionSize)
 	var mutexLocks = make([]*sync.RWMutex, partitionSize)
 	//Opening the file in Append/Write Mode makes the cursor go to end of the file
@@ -53,6 +55,7 @@ func NewDistributedKVStore(tcpServerAddress string, statisticsStore *statistics.
 	}
 }
 
+// LoadDataFromAOFFile reads and processes commands from the AOF log file to restore the store's state.
 func (d *DistributedKVStore) LoadDataFromAOFFile() {
 	//Read from d.AOFLogFileName
 	_, err := d.AOFLogFileName.Seek(0, 0)
@@ -67,6 +70,8 @@ func (d *DistributedKVStore) LoadDataFromAOFFile() {
 	}
 }
 
+// StartSystem initializes the TCP server, sets up signal handling for graceful shutdown,
+// and continuously accepts and handles new client connections.
 func (d *DistributedKVStore) StartSystem() {
 	tcpListener, err := net.Listen("tcp", d.tcpServerAddress)
 	defer tcpListener.Close()
@@ -98,6 +103,10 @@ func (d *DistributedKVStore) StartSystem() {
 		go d.HandleConnection(connection)
 	}
 }
+
+// Set stores the key-value pair in the distributed KV store.
+// It hashes the key to determine which partition to store it in.
+// If the key is longer than 128 bytes, it returns an error message.
 func (d *DistributedKVStore) Set(key string, value string) string {
 	if len(key) > 128 {
 		return "Key size is too large"
@@ -109,6 +118,9 @@ func (d *DistributedKVStore) Set(key string, value string) string {
 
 	return key
 }
+
+// Get retrieves the value associated with the provided key from the distributed key-value store.
+// It returns the value and a boolean indicating whether the key exists.
 func (d *DistributedKVStore) Get(key string) (string, bool) {
 	dataInThisPartitionIndex := d.HashKeyIntoPartitions(key)
 
@@ -119,6 +131,9 @@ func (d *DistributedKVStore) Get(key string) (string, bool) {
 	return value, exists
 
 }
+
+// Delete removes the specified key from the distributed key-value store.
+// It returns true if the key was successfully deleted, and false if the key did not exist.
 func (d *DistributedKVStore) Delete(key string) bool {
 	partitionIndex := d.HashKeyIntoPartitions(key)
 	d.mutexLock[partitionIndex].Lock()
@@ -131,6 +146,9 @@ func (d *DistributedKVStore) Delete(key string) bool {
 	}
 	return false
 }
+
+// HandleConnection handles an incoming client connection by processing commands received over the network.
+// It reads input lines from the connection, processes commands, and sends back responses.
 func (d *DistributedKVStore) HandleConnection(connection net.Conn) {
 	defer d.waitGroup.Done()
 	scanner := bufio.NewScanner(connection) //bufio.NewScanner can scan NewLine
@@ -144,12 +162,20 @@ func (d *DistributedKVStore) HandleConnection(connection net.Conn) {
 		}
 	}
 }
+
+// ProcessCommand parses and executes a given command on the distributed key-value store.
+//
+// Accepts commands:
+// - SET <key> <value>: Adds/Updates a key-value pair.
+// - GET <key>: Retrieves the value for the given key.
+// - DEL <key>: Deletes the key-value pair for the given key.
+//
+// Arguments:
+// inputLine - The command to be processed.
+// isLoadingFromAOF - A flag indicating if the command is being loaded from an AOF file.
+//
+// Returns the result or acknowledgment of the command execution as a string.
 func (d *DistributedKVStore) ProcessCommand(inputLine string, isLoadingFromAOF bool) string {
-	// The server will accept the following commands:
-	//
-	// - SET <key> <value>: Adds or updates a key-value pair in the store.
-	// - GET <key>: Retrieves the value associated with the given key.
-	// - DEL <key>: Deletes the key-value pair associated with the given key.
 
 	inputLine = strings.TrimSpace(inputLine)
 	inputSlice := strings.Split(inputLine, " ")
@@ -193,6 +219,8 @@ func (d *DistributedKVStore) GetAll() {
 	}
 	fmt.Println(len(d.dataStore))
 }
+
+// HashKeyIntoPartitions hashes the provided key and maps it to one of the partitions.
 func (d *DistributedKVStore) HashKeyIntoPartitions(key string) int {
 	//Using a non-cryptic hashing algorithm for performance
 	hashEngine := fnv.New32()
@@ -221,6 +249,8 @@ func (d *DistributedKVStore) ViewPartitionWiseData() {
 		slog.Any("partition_sizes", partitionSizes))
 }
 
+// ShutDown performs a graceful shutdown of the server, waiting for ongoing operations to complete
+// and displaying analytics before exiting.
 func (d *DistributedKVStore) ShutDown() {
 	fmt.Println("Entered Shutting Down the Server")
 
