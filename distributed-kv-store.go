@@ -3,7 +3,6 @@ package distributed_store
 import (
 	"bufio"
 	"fmt"
-	"github.com/SangharshSeth/distributed-kv-store/pkg/stastistics"
 	"hash/fnv"
 	"log"
 	"log/slog"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+
+	"github.com/SangharshSeth/distributed-kv-store/pkg/stastistics"
 )
 
 // DistributedKVStore is a struct representing a distributed key-value store. It allows for concurrent read and write operations.
@@ -32,8 +33,10 @@ type DistributedKVStore struct {
 func NewDistributedKVStore(tcpServerAddress string, statisticsStore *stastistics.Statistics, partitionSize int) *DistributedKVStore {
 	var dataPartitions = make([]map[string]string, partitionSize)
 	var mutexLocks = make([]*sync.RWMutex, partitionSize)
-	//Opening the file in Append/Write Mode makes the cursor go to end of the file
-	//So to read a file you have to create a new pointer in read mode or seek to the beginning of file
+
+	/*Opening the file in Append/Write Mode makes the cursor go to end of the file
+	So to read a file you have to create a new pointer in read mode or seek to the beginning of file
+	*/
 
 	AOFLogFileName, err := os.OpenFile("AOF.txt", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
