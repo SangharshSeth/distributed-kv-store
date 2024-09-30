@@ -1,4 +1,4 @@
-package stastistics
+package distributed_store
 
 import (
 	"fmt"

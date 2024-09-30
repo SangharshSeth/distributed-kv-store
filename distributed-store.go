@@ -12,8 +12,6 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-
-	"github.com/SangharshSeth/distributed-kv-store/pkg/stastistics"
 )
 
 // DistributedKVStore is a struct representing a distributed key-value store. It allows for concurrent read and write operations.
@@ -23,14 +21,14 @@ type DistributedKVStore struct {
 	mutexLock        []*sync.RWMutex
 	tcpServerAddress string
 	waitGroup        *sync.WaitGroup
-	analyticsStorage *stastistics.Statistics
+	analyticsStorage *Statistics
 	PartitionSize    int
 	AOFLogFileName   *os.File
 }
 
 // NewDistributedKVStore creates and initializes a new DistributedKVStore instance.
 // It sets up the data partitions, mutex locks, and opens the AOF log file.
-func NewDistributedKVStore(tcpServerAddress string, statisticsStore *stastistics.Statistics, partitionSize int) *DistributedKVStore {
+func NewDistributedKVStore(tcpServerAddress string, statisticsStore *Statistics, partitionSize int) *DistributedKVStore {
 	var dataPartitions = make([]map[string]string, partitionSize)
 	var mutexLocks = make([]*sync.RWMutex, partitionSize)
 
